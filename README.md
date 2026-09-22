@@ -32,10 +32,10 @@ Para executar a API localmente, você precisará ter instalado:
 
 ## 🚀 Como Executar Localmente
 
-**1. Clone o repositório e acesse a pasta do projetotcc-api:**
+**1. Clone o repositório e acesse a pasta do sinapse-api:**
 ```bash
-git clone https://github.com/SEU_USUARIO/NOME_DO_REPOSITORIO-API.git
-cd NOME_DO_REPOSITORIO-API
+git clone https://github.com/SEU_USUARIO/sinapse-api.git
+cd sinapse-api
 ```
 
 **2. Instale as dependências:**
@@ -87,4 +87,4 @@ Após isso, o terminal mostrará que o servidor está escutando na porta definid
 - `npm run seed`: Aciona o script para inserir dados iniciais padrão na camada do Prisma.
 
 ---
-*Este é um projeto acadêmico de Trabalho de Conclusão de Curso (TCC) versão 1.0 - 2026.*
+*Sinapse — Plataforma de Educação Inclusiva v1.0 (2026).*

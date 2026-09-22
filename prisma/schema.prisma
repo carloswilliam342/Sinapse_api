@@ -32,10 +32,11 @@ model Class {
   shift     String // "morning" | "afternoon" | "evening"
   teacherId String
 
-  teacher      Teacher             @relation(fields: [teacherId], references: [id])
-  students     Student[]
-  routines     RoutineItem[]
-  observations LessonObservation[]
+  teacher           Teacher             @relation(fields: [teacherId], references: [id])
+  students          Student[]
+  routines          RoutineItem[]
+  routineSnapshots  RoutineSnapshot[]
+  observations      LessonObservation[]
 
   @@map("classes")
 }
@@ -182,4 +183,18 @@ model SystemLog {
   createdAt DateTime @default(now())
 
   @@map("system_logs")
+}
+
+model RoutineSnapshot {
+  id        String   @id @default(uuid())
+  classId   String
+  weekStart DateTime // Segunda-feira da semana
+  weekEnd   DateTime // Domingo da semana
+  items     Json     // Array de itens da rotina naquela semana
+  createdAt DateTime @default(now())
+
+  class     Class    @relation(fields: [classId], references: [id])
+
+  @@unique([classId, weekStart])
+  @@map("routine_snapshots")
 }

@@ -18,6 +18,23 @@ const routineSchema = z.object({
 
 const updateRoutineSchema = routineSchema.partial();
 
+// Helper: obter segunda-feira da semana de uma data
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function getSunday(monday: Date): Date {
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  return sunday;
+}
+
 // Listar rotinas (com filtro opcional por turma)
 router.get('/', async (req: AuthRequest, res) => {
   try {
@@ -37,6 +54,79 @@ router.get('/', async (req: AuthRequest, res) => {
     res.json(routines);
   } catch (error) {
     res.status(500).json({ error: 'Erro ao buscar rotinas' });
+  }
+});
+
+// Salvar snapshot da semana atual
+router.post('/snapshot', async (req: AuthRequest, res) => {
+  try {
+    const { classId } = req.body;
+    if (!classId) return res.status(400).json({ error: 'classId é obrigatório' });
+
+    // Verificar permissão
+    if (req.user?.role !== 'master' && req.user?.role !== 'admin') {
+      const classItem = await prisma.class.findUnique({ where: { id: classId } });
+      if (!classItem || classItem.teacherId !== req.user?.id) {
+        return res.status(403).json({ error: 'Acesso negado' });
+      }
+    }
+
+    const now = new Date();
+    const weekStart = getMonday(now);
+    const weekEnd = getSunday(weekStart);
+
+    // Buscar itens da rotina atual
+    const items = await prisma.routineItem.findMany({
+      where: { classId },
+      include: { activity: true },
+      orderBy: [{ dayOfWeek: 'asc' }, { time: 'asc' }],
+    });
+
+    // Salvar ou atualizar snapshot
+    const snapshot = await prisma.routineSnapshot.upsert({
+      where: {
+        classId_weekStart: { classId, weekStart },
+      },
+      update: {
+        items: items as any,
+        weekEnd,
+      },
+      create: {
+        classId,
+        weekStart,
+        weekEnd,
+        items: items as any,
+      },
+    });
+
+    res.json(snapshot);
+  } catch (error) {
+    console.error('Erro ao salvar snapshot:', error);
+    res.status(500).json({ error: 'Erro ao salvar snapshot da rotina' });
+  }
+});
+
+// Listar histórico de snapshots
+router.get('/snapshots', async (req: AuthRequest, res) => {
+  try {
+    const { classId } = req.query;
+    const where: any = {};
+    if (classId) where.classId = classId as string;
+
+    if (req.user?.role !== 'master' && req.user?.role !== 'admin') {
+      where.class = { teacherId: req.user?.id };
+    }
+
+    const snapshots = await prisma.routineSnapshot.findMany({
+      where,
+      include: { class: true },
+      orderBy: { weekStart: 'desc' },
+    });
+
+    res.json(snapshots);
+  } catch (error) {
+    console.error('Erro ao buscar snapshots:', error);
+    res.status(500).json({ error: 'Erro ao buscar histórico de rotinas' });
   }
 });
 

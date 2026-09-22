@@ -98,7 +98,7 @@ router.post('/', requireRole('master'), async (req: AuthRequest, res) => {
 
     await logAction({
       userId: req.user!.id,
-      userName: 'Admin',
+      userName: req.user!.name,
       action: 'CREATE',
       entity: 'teacher',
       entityId: teacher.id,
@@ -138,7 +138,7 @@ router.put('/:id', requireRole('master'), async (req: AuthRequest, res) => {
 
     await logAction({
       userId: req.user!.id,
-      userName: 'Admin',
+      userName: req.user!.name,
       action: 'UPDATE',
       entity: 'teacher',
       entityId: teacher.id,

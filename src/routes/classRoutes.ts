@@ -66,7 +66,7 @@ router.post('/', async (req: AuthRequest, res) => {
 
     await logAction({
       userId: req.user!.id,
-      userName: req.user!.role,
+      userName: req.user!.name,
       action: 'CREATE',
       entity: 'class',
       entityId: classItem.id,
@@ -102,7 +102,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
 
     await logAction({
       userId: req.user!.id,
-      userName: req.user!.role,
+      userName: req.user!.name,
       action: 'UPDATE',
       entity: 'class',
       entityId: classItem.id,
@@ -146,7 +146,7 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 
     await logAction({
       userId: req.user!.id,
-      userName: req.user!.role,
+      userName: req.user!.name,
       action: 'DELETE',
       entity: 'class',
       entityId: (req.params.id as string),

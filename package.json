@@ -1,5 +1,5 @@
 {
-  "name": "projetotcc-api",
+  "name": "sinapse-api",
   "version": "1.0.0",
   "description": "Backend API para o sistema de gerenciamento escolar",
   "main": "dist/server.js",
