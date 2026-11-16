@@ -8,9 +8,13 @@ import { requireRole, type AuthRequest } from '../middleware/auth';
 const router = Router();
 const SALT_ROUNDS = 10;
 
+// Dados de professores (nome, e-mail, login, turmas) são só para o master.
+// Vale para todas as rotas deste arquivo, inclusive as de leitura.
+router.use(requireRole('master'));
+
 const createTeacherSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
-  email: z.string().email('E-mail inválido'),
+  email: z.string().trim().toLowerCase().email('E-mail inválido'),
   login: z.string().min(1, 'Login é obrigatório'),
   password: z.string().min(6, 'A senha deve ter no mínimo 6 caracteres'),
   subject: z.string().min(1, 'Disciplina é obrigatória'),
@@ -20,30 +24,55 @@ const createTeacherSchema = z.object({
 
 const updateTeacherSchema = z.object({
   name: z.string().min(1).optional(),
-  email: z.string().email().optional(),
+  email: z.string().trim().toLowerCase().email().optional(),
   login: z.string().min(1).optional(),
   password: z.string().min(6).optional().or(z.literal('')),
   subject: z.string().min(1).optional(),
-  status: z.enum(['active', 'inactive']).optional(),
+  // 'pending' = cadastro feito pelo próprio professor, aguardando aprovação
+  status: z.enum(['active', 'inactive', 'pending']).optional(),
   role: z.enum(['teacher', 'master']).optional(),
 });
 
-// Listar professores (com paginação e busca)
+const TEACHER_STATUSES = ['active', 'inactive', 'pending'];
+
+// O e-mail serve para login e redefinição de senha, então não pode se repetir.
+// A comparação ignora maiúsculas; `exceptId` deixa o professor manter o próprio e-mail.
+async function emailInUse(email: string, exceptId?: string): Promise<boolean> {
+  const other = await prisma.teacher.findFirst({
+    where: {
+      email: { equals: email, mode: 'insensitive' },
+      ...(exceptId && { id: { not: exceptId } }),
+    },
+    select: { id: true },
+  });
+  return other !== null;
+}
+
+// Violação de campo único no Prisma (aqui, o login)
+function isUniqueViolation(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
+}
+
+// Listar professores (com paginação, busca e filtro por status)
 router.get('/', async (req, res) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const search = req.query.search as string || '';
+    const status = TEACHER_STATUSES.includes(req.query.status as string) ? (req.query.status as string) : undefined;
     const skip = (page - 1) * limit;
 
-    const where = search ? {
-      OR: [
-        { name: { contains: search, mode: 'insensitive' as const } },
-        { email: { contains: search, mode: 'insensitive' as const } },
-      ]
-    } : {};
+    const where = {
+      ...(status && { status }),
+      ...(search && {
+        OR: [
+          { name: { contains: search, mode: 'insensitive' as const } },
+          { email: { contains: search, mode: 'insensitive' as const } },
+        ],
+      }),
+    };
 
-    const [teachers, total] = await Promise.all([
+    const [teachers, total, pendingCount] = await Promise.all([
       prisma.teacher.findMany({
         where,
         skip,
@@ -51,7 +80,9 @@ router.get('/', async (req, res) => {
         omit: { password: true },
         orderBy: { name: 'asc' },
       }),
-      prisma.teacher.count({ where })
+      prisma.teacher.count({ where }),
+      // Total de cadastros aguardando aprovação, independente do filtro atual
+      prisma.teacher.count({ where: { status: 'pending' } }),
     ]);
 
     res.json({
@@ -60,7 +91,8 @@ router.get('/', async (req, res) => {
         total,
         page,
         limit,
-        totalPages: Math.ceil(total / limit)
+        totalPages: Math.ceil(total / limit),
+        pendingCount,
       }
     });
   } catch (error) {
@@ -84,9 +116,13 @@ router.get('/:id', async (req, res) => {
 });
 
 // Criar professor
-router.post('/', requireRole('master'), async (req: AuthRequest, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   try {
     const data = createTeacherSchema.parse(req.body);
+
+    if (await emailInUse(data.email)) {
+      return res.status(409).json({ error: 'E-mail já está em uso' });
+    }
     
     // Hash da senha
     const hashedPassword = await bcrypt.hash(data.password, SALT_ROUNDS);
@@ -111,14 +147,22 @@ router.post('/', requireRole('master'), async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Dados inválidos', details: error.issues });
     }
+    if (isUniqueViolation(error)) {
+      return res.status(409).json({ error: 'Login já está em uso' });
+    }
+    console.error('Erro ao criar professor:', error);
     res.status(500).json({ error: 'Erro ao criar professor' });
   }
 });
 
 // Atualizar professor
-router.put('/:id', requireRole('master'), async (req: AuthRequest, res) => {
+router.put('/:id', async (req: AuthRequest, res) => {
   try {
     const data = updateTeacherSchema.parse(req.body);
+
+    if (data.email && await emailInUse(data.email, req.params.id as string)) {
+      return res.status(409).json({ error: 'E-mail já está em uso' });
+    }
     
     const updateData: any = { ...data };
     
@@ -151,6 +195,10 @@ router.put('/:id', requireRole('master'), async (req: AuthRequest, res) => {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: 'Dados inválidos', details: error.issues });
     }
+    if (isUniqueViolation(error)) {
+      return res.status(409).json({ error: 'Login já está em uso' });
+    }
+    console.error('Erro ao atualizar professor:', error);
     res.status(500).json({ error: 'Erro ao atualizar professor' });
   }
 });

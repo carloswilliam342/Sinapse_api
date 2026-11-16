@@ -2,38 +2,33 @@ import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../prisma';
 import type { AuthRequest } from '../middleware/auth';
+import { canUseActivity, canUseClass } from '../access';
+import { addDays, mondayOf, todayInAppTz, utcMidnight } from '../dates';
 
 const router = Router();
 
-const routineSchema = z.object({
+// Campos sem .default(): no Zod 4, .partial() aplica o valor padrão a campos
+// ausentes, e uma edição parcial apagaria dados já gravados.
+const routineFields = {
   classId: z.string().uuid('ID da turma inválido'),
   dayOfWeek: z.number().int().min(0).max(6),
   time: z.string().min(1, 'Horário é obrigatório'),
   title: z.string().min(1, 'Título é obrigatório'),
   activityId: z.string().uuid().nullable().optional().or(z.literal('').transform(() => null)),
-  reminder: z.boolean().default(false),
+  reminder: z.boolean(),
   reminderText: z.string().nullable().optional(),
   color: z.string().min(1, 'Cor é obrigatória'),
+};
+
+const routineSchema = z.object({
+  ...routineFields,
+  reminder: routineFields.reminder.default(false),
 });
 
-const updateRoutineSchema = routineSchema.partial();
+const updateRoutineSchema = z.object(routineFields).partial();
 
-// Helper: obter segunda-feira da semana de uma data
-function getMonday(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function getSunday(monday: Date): Date {
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  sunday.setHours(23, 59, 59, 999);
-  return sunday;
-}
+const CLASS_DENIED = 'Acesso negado: a turma não pertence a você';
+const ACTIVITY_DENIED = 'Acesso negado: atividade inexistente ou de outro professor';
 
 // Listar rotinas (com filtro opcional por turma)
 router.get('/', async (req: AuthRequest, res) => {
@@ -71,9 +66,11 @@ router.post('/snapshot', async (req: AuthRequest, res) => {
       }
     }
 
-    const now = new Date();
-    const weekStart = getMonday(now);
-    const weekEnd = getSunday(weekStart);
+    // Semana corrente (segunda a domingo) no fuso da escola, não em UTC.
+    // Gravada como segunda 00:00 UTC e domingo 23:59:59.999 UTC.
+    const monday = mondayOf(todayInAppTz());
+    const weekStart = utcMidnight(monday);
+    const weekEnd = new Date(utcMidnight(addDays(monday, 7)).getTime() - 1);
 
     // Buscar itens da rotina atual
     const items = await prisma.routineItem.findMany({
@@ -138,8 +135,11 @@ router.post('/', async (req: AuthRequest, res) => {
     if (req.user?.role !== 'master' && req.user?.role !== 'admin') {
       const classItem = await prisma.class.findUnique({ where: { id: data.classId } });
       if (!classItem || classItem.teacherId !== req.user?.id) {
-        return res.status(403).json({ error: 'Acesso negado: a turma não pertence a você' });
+        return res.status(403).json({ error: CLASS_DENIED });
       }
+    }
+    if (data.activityId && !(await canUseActivity(req, data.activityId))) {
+      return res.status(403).json({ error: ACTIVITY_DENIED });
     }
 
     const routine = await prisma.routineItem.create({
@@ -168,7 +168,18 @@ router.put('/:id', async (req: AuthRequest, res) => {
     if (!existingRoutine) return res.status(404).json({ error: 'Rotina não encontrada' });
 
     if (req.user?.role !== 'master' && req.user?.role !== 'admin' && existingRoutine.class.teacherId !== req.user?.id) {
-      return res.status(403).json({ error: 'Acesso negado: a turma não pertence a você' });
+      return res.status(403).json({ error: CLASS_DENIED });
+    }
+
+    // A checagem acima olhou a turma atual do item. Se a edição troca a turma
+    // ou a atividade, o destino também precisa ser de quem edita.
+    if (data.classId && data.classId !== existingRoutine.classId &&
+        !(await canUseClass(req, data.classId))) {
+      return res.status(403).json({ error: CLASS_DENIED });
+    }
+    if (data.activityId && data.activityId !== existingRoutine.activityId &&
+        !(await canUseActivity(req, data.activityId))) {
+      return res.status(403).json({ error: ACTIVITY_DENIED });
     }
 
     const routine = await prisma.routineItem.update({

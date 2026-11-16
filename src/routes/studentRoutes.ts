@@ -6,18 +6,28 @@ import type { AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
-const studentSchema = z.object({
+// Campos sem .default(): no Zod 4, .partial() aplica o valor padrão a campos
+// ausentes, e editar só o nome marcaria o aluno como sem TEA/TDAH.
+const studentFields = {
   name: z.string().min(1, 'Nome do aluno é obrigatório'),
   classId: z.string().uuid('ID da turma inválido'),
   registrationNumber: z.string().min(1, 'Matrícula é obrigatória'),
   birthDate: z.string().min(1, 'Data de nascimento é obrigatória'),
-  needsTea: z.boolean().default(false),
-  needsTdah: z.boolean().default(false),
-  otherNeeds: z.string().default(''),
-  needsObservations: z.string().default(''),
+  needsTea: z.boolean(),
+  needsTdah: z.boolean(),
+  otherNeeds: z.string(),
+  needsObservations: z.string(),
+};
+
+const studentSchema = z.object({
+  ...studentFields,
+  needsTea: studentFields.needsTea.default(false),
+  needsTdah: studentFields.needsTdah.default(false),
+  otherNeeds: studentFields.otherNeeds.default(''),
+  needsObservations: studentFields.needsObservations.default(''),
 });
 
-const updateStudentSchema = studentSchema.partial();
+const updateStudentSchema = z.object(studentFields).partial();
 
 // Listar alunos (com paginação e busca)
 router.get('/', async (req: AuthRequest, res) => {

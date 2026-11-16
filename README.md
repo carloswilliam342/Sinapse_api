@@ -65,11 +65,14 @@ Este comando lerá sua `DATABASE_URL` e criará todas as tabelas necessárias no
 npx prisma migrate dev
 ```
 
-**5. (Opcional) Popule o banco:**
-Isso alimentará sua base de dados com informações iniciais, caso você tenha criado seeds.
+**5. (Opcional) Popule o banco com dados de exemplo:**
+**Atenção: o seed apaga todas as tabelas antes de inserir os dados de exemplo.** Use só em banco de desenvolvimento.
 ```bash
 npm run seed
 ```
+- Em banco local (`localhost`) roda direto.
+- Em banco remoto (Neon, Render etc.) o script se recusa a rodar, a menos que você repita o host do banco em `SEED_CONFIRM`. Com `NODE_ENV=production` ele nunca roda.
+- As contas de exemplo (`admin`, `maria.silva`, `joao.santos`) usam a senha de `SEED_PASSWORD`; se ela não for definida, o script gera uma senha e a mostra no terminal ao final.
 
 **6. Inicie o Servidor Localmente:**
 ```bash
@@ -85,6 +88,19 @@ Após isso, o terminal mostrará que o servidor está escutando na porta definid
 - `npm run build`: Compila o código nativo `.ts` para código de produção puro `.js` na pasta `dist/`.
 - `npm start`: Inicia o projeto baseado nos arquivos buildados do `dist/`. Usado principalmente em produção.
 - `npm run seed`: Aciona o script para inserir dados iniciais padrão na camada do Prisma.
+- `npm run test:materials`: Verifica geração e persistência de materiais, permissões e falhas da IA em um PostgreSQL local de teste. Exige `TEST_DATABASE_URL`; não usa o banco do `.env`.
+
+## Material pronto com IA
+
+Para abrir uma demonstração local com dados fictícios, Docker e Node 24 disponíveis, execute `node scripts/start-local-preview.cjs` diretamente no terminal. O script usa um PostgreSQL separado no container `sinapse-local-preview`, aplica migrações e preenche somente um banco local vazio. Ele inicia API e frontend em segundo plano, mostra o endereço e a senha inicial de demonstração no terminal e mantém dados no volume `sinapse-preview-pgdata`. O banco do `.env` não é usado. Logs e PIDs ficam em `.local-preview/` (ignorada pelo Git); a chave do Gemini continua vindo do `.env`, e gerar conteúdo usa as cotas reais do projeto.
+
+Na tela **Atividades**, peça uma sugestão ou preencha a proposta manualmente. Escolha **Material pronto** (ficha de exercícios, cartões de sequência ou jogo da memória), revise e salve. Abra os detalhes da atividade para gerar, revisar e imprimir o material. O gabarito e as orientações do professor ficam na tela e não saem na impressão do aluno.
+
+A integração usa o Gemini em duas etapas, com revisão do professor entre elas: **3.5 Flash-Lite nas sugestões** (`GEMINI_MODEL`) e **3.8 Flash no material** (`GEMINI_MODEL_MATERIAL`). Esses são os padrões do código mesmo sem as variáveis. Cada etapa é configurada independentemente e usa o SDK `@google/genai`.
+
+As chamadas não repetem nem trocam de modelo automaticamente. Ao acabar a cota, a API mostra uma mensagem e mantém o material salvo. Para manter o uso gratuito sem cobrança excedente, o projeto da chave precisa permanecer no Free Tier, sem faturamento vinculado; essa configuração é feita na conta do Google, não pelo código.
+
+**Plano gratuito:** mantenha `GEMINI_ALLOW_STUDENT_DATA=false` (também é o padrão quando a variável está ausente). A API bloqueia as duas etapas para atividades vinculadas a alunos, evitando o envio automático de diagnósticos, perfil e histórico. Nas atividades gerais, use apenas conteúdo pedagógico sem dados pessoais nos campos livres. A remoção do nome, sozinha, não torna esses dados anônimos. Consulte [configuração, privacidade e testes](docs/IA.md).
 
 ---
 *Sinapse — Plataforma de Educação Inclusiva v1.0 (2026).*

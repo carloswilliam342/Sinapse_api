@@ -2,24 +2,31 @@ import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../prisma';
 import type { AuthRequest } from '../middleware/auth';
+import { isAdmin, canUseActivity, canUseStudent } from '../access';
 
 const router = Router();
 
-const performanceSchema = z.object({
+// Campos sem .default(): no Zod 4, .partial() aplica o valor padrão a campos
+// ausentes, e uma edição parcial apagaria dados já gravados.
+const performanceFields = {
   studentId: z.string().uuid('ID do aluno inválido'),
   activityId: z.string().uuid('ID da atividade inválido'),
   activityTitle: z.string().min(1, 'Título da atividade é obrigatório'),
   date: z.string().min(1, 'Data é obrigatória'),
   status: z.enum(['completed', 'completed_with_help', 'not_completed']),
   difficultyLevel: z.number().int().min(1).max(5),
-  notes: z.string().default(''),
+  notes: z.string(),
+};
+
+const performanceSchema = z.object({
+  ...performanceFields,
+  notes: performanceFields.notes.default(''),
 });
 
-const updatePerformanceSchema = performanceSchema.partial();
+const updatePerformanceSchema = z.object(performanceFields).partial();
 
-function isAdmin(req: AuthRequest) {
-  return req.user?.role === 'master' || req.user?.role === 'admin';
-}
+const STUDENT_DENIED = 'Acesso negado: o aluno não pertence a sua turma';
+const ACTIVITY_DENIED = 'Acesso negado: atividade inexistente ou de outro professor';
 
 // Listar registros de desempenho (com filtros opcionais)
 router.get('/', async (req: AuthRequest, res) => {
@@ -49,14 +56,11 @@ router.post('/', async (req: AuthRequest, res) => {
   try {
     const data = performanceSchema.parse(req.body);
 
-    if (!isAdmin(req)) {
-      const student = await prisma.student.findUnique({
-        where: { id: data.studentId },
-        include: { class: true },
-      });
-      if (!student || student.class.teacherId !== req.user?.id) {
-        return res.status(403).json({ error: 'Acesso negado: o aluno não pertence a sua turma' });
-      }
+    if (!(await canUseStudent(req, data.studentId))) {
+      return res.status(403).json({ error: STUDENT_DENIED });
+    }
+    if (!(await canUseActivity(req, data.activityId))) {
+      return res.status(403).json({ error: ACTIVITY_DENIED });
     }
 
     const record = await prisma.performanceRecord.create({
@@ -86,6 +90,18 @@ router.put('/:id', async (req: AuthRequest, res) => {
     }
 
     const data = updatePerformanceSchema.parse(req.body);
+
+    // A checagem acima olhou o aluno atual do registro. Se a edição troca o
+    // aluno ou a atividade, o destino também precisa ser de quem edita.
+    if (data.studentId && data.studentId !== existing.studentId &&
+        !(await canUseStudent(req, data.studentId))) {
+      return res.status(403).json({ error: STUDENT_DENIED });
+    }
+    if (data.activityId && data.activityId !== existing.activityId &&
+        !(await canUseActivity(req, data.activityId))) {
+      return res.status(403).json({ error: ACTIVITY_DENIED });
+    }
+
     const record = await prisma.performanceRecord.update({
       where: { id: req.params.id as string },
       data,

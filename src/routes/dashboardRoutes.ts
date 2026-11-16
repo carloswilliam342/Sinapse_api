@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import prisma from '../prisma';
 import type { AuthRequest } from '../middleware/auth';
+import { addDays, todayInAppTz, weekdayOf } from '../dates';
 
 const router = Router();
 
 // GET /api/dashboard/stats
 router.get('/stats', async (req: AuthRequest, res) => {
   try {
-    const now = new Date();
+    // "Hoje" no fuso da escola, não em UTC (ver src/dates.ts)
+    const today = todayInAppTz();
     
     const isAdmin = (req.user?.role === 'master' || req.user?.role === 'admin');
     const teacherId = req.user?.id;
@@ -46,16 +48,14 @@ router.get('/stats', async (req: AuthRequest, res) => {
     const weeklyActivity: { day: string; atividades: number }[] = [];
     
     for (let i = 6; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+      const dateStr = addDays(today, -i); // YYYY-MM-DD
 
       const count = await prisma.performanceRecord.count({
         where: { date: dateStr, ...performanceWhere },
       });
 
       weeklyActivity.push({
-        day: daysOfWeek[date.getDay()],
+        day: daysOfWeek[weekdayOf(dateStr)],
         atividades: count,
       });
     }

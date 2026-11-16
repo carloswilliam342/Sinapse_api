@@ -3,7 +3,8 @@ import prisma from './prisma';
 interface LogActionParams {
   userId: string;
   userName: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE';
+  // ERROR = falha de sistema que o master precisa ver (ex.: e-mail não enviado)
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'ERROR';
   entity: string;
   entityId?: string;
   details: string;

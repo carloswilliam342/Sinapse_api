@@ -139,6 +139,8 @@ router.delete('/:id', async (req: AuthRequest, res) => {
       prisma.lessonObservation.deleteMany({ where: { OR: [{ classId }, { studentId: { in: studentIds } }] } }),
       prisma.studentProfile.deleteMany({ where: { studentId: { in: studentIds } } }),
       prisma.routineItem.deleteMany({ where: { classId } }),
+      // Semanas salvas no histórico de rotinas também apontam para a turma
+      prisma.routineSnapshot.deleteMany({ where: { classId } }),
       prisma.activity.updateMany({ where: { studentId: { in: studentIds } }, data: { studentId: null } }),
       prisma.student.deleteMany({ where: { classId } }),
       prisma.class.delete({ where: { id: classId } }),
@@ -156,6 +158,7 @@ router.delete('/:id', async (req: AuthRequest, res) => {
 
     res.json({ message: 'Turma deletada com sucesso' });
   } catch (error) {
+    console.error('Erro ao deletar turma:', error);
     res.status(500).json({ error: 'Erro ao deletar turma' });
   }
 });

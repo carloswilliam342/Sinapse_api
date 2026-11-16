@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -19,6 +19,9 @@ if (!process.env.GEMINI_API_KEY) {
 }
 if (!process.env.RESEND_API_KEY) {
   console.warn('⚠️  RESEND_API_KEY não configurada — e-mails de redefinição de senha ficarão indisponíveis.');
+} else if (!process.env.MAIL_FROM || process.env.MAIL_FROM.includes('resend.dev')) {
+  console.warn('⚠️  MAIL_FROM usa o remetente de teste do Resend — os e-mails só chegam ao dono da conta Resend.');
+  console.warn('   Verifique um domínio no Resend e defina MAIL_FROM com um endereço desse domínio.');
 }
 
 import teacherRoutes from './routes/teacherRoutes';
@@ -34,10 +37,18 @@ import aiRoutes from './routes/aiRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import passwordResetRoutes from './routes/passwordResetRoutes';
 import systemLogRoutes from './routes/systemLogRoutes';
-import { authenticateToken, requireRole } from './middleware/auth';
+import { authenticateToken, requireRole, type AuthRequest } from './middleware/auth';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// ─── Proxy reverso ───────────────────────────────────────────────────────────
+// Em produção (Render) a conexão chega de um proxy. Sem isto, req.ip é o IP do
+// proxy e o rate limit vira um contador único para todos os usuários.
+// O número é a quantidade de proxies confiáveis na frente do servidor; nunca
+// usar `true`, que aceitaria um X-Forwarded-For forjado pelo cliente.
+const trustProxyHops = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? '1', 10);
+app.set('trust proxy', Number.isInteger(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1);
 
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'http://localhost:5173',
@@ -77,13 +88,16 @@ const authLimiter = rateLimit({
   message: { error: 'Muitas tentativas de autenticação. Tente novamente em 15 minutos.' },
 });
 
-// Limite para IA: evita abuso de custo da API do Gemini
+// Limite para IA: evita abuso de custo da API do Gemini.
+// Conta por usuário autenticado (a rota já passou por authenticateToken),
+// para um professor não consumir a cota dos outros.
 const aiLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hora
   limit: 30,
+  keyGenerator: (req) => (req as AuthRequest).user?.id ?? ipKeyGenerator(req.ip ?? ''),
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  message: { error: 'Limite de sugestões por IA atingido. Tente novamente em 1 hora.' },
+  message: { error: 'Limite de uso da IA atingido. Tente novamente em 1 hora.' },
 });
 
 app.use(generalLimiter);

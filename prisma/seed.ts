@@ -1,14 +1,48 @@
+import 'dotenv/config';
+import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+// Este script APAGA todas as tabelas antes de inserir os dados de exemplo.
+// Em banco local roda direto; em banco remoto só roda com confirmação explícita.
+function assertSafeToSeed() {
+  let host = '';
+  try {
+    host = new URL(process.env.DATABASE_URL ?? '').hostname;
+  } catch {
+    // DATABASE_URL ausente ou ilegível: tratado abaixo como "não local"
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ Seed bloqueado: NODE_ENV=production. Este script apaga todos os dados.');
+    process.exit(1);
+  }
+
+  const isLocal = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(host);
+  if (!isLocal && process.env.SEED_CONFIRM !== host) {
+    console.error('❌ Seed bloqueado: o DATABASE_URL aponta para um banco que não é local.');
+    console.error(`   Host: ${host || '(não identificado)'}`);
+    console.error('   Este script APAGA TODAS AS TABELAS desse banco antes de inserir os dados de exemplo.');
+    console.error('   Se é isso mesmo que você quer, rode de novo com SEED_CONFIRM igual ao host acima.');
+    process.exit(1);
+  }
+}
+
 async function main() {
+  assertSafeToSeed();
   console.log('🌱 Iniciando seed...');
+
+  // Senha das contas de exemplo: vem de SEED_PASSWORD ou é gerada nesta execução.
+  // Nunca fica uma senha fixa conhecida no código.
+  const seedPassword = process.env.SEED_PASSWORD || crypto.randomBytes(9).toString('base64url');
+  const seedPasswordHash = await bcrypt.hash(seedPassword, 10);
 
   // Limpar dados existentes (ordem importa por causa das FKs)
   await prisma.performanceRecord.deleteMany();
   await prisma.lessonObservation.deleteMany();
+  await prisma.routineSnapshot.deleteMany();
   await prisma.routineItem.deleteMany();
   await prisma.activityStep.deleteMany();
   await prisma.activity.deleteMany();
@@ -22,14 +56,13 @@ async function main() {
   console.log('📋 Dados antigos removidos.');
 
   // Usuário Master (Administrador do Sistema)
-  const adminHash = await bcrypt.hash('admin123', 10);
   await prisma.teacher.create({
     data: {
       id: 'admin',
       name: 'Administrador do Sistema',
       email: 'admin@escola.edu.br',
       login: 'admin',
-      password: adminHash,
+      password: seedPasswordHash,
       status: 'active',
       subject: 'Administração',
       role: 'master',
@@ -40,21 +73,21 @@ async function main() {
   const t1 = await prisma.teacher.create({
     data: {
       id: 't1', name: 'Maria Silva', email: 'maria.silva@escola.edu.br',
-      login: 'maria.silva', password: '123456', status: 'active',
+      login: 'maria.silva', password: seedPasswordHash, status: 'active',
       subject: 'Educação Especial', role: 'teacher',
     },
   });
   const t2 = await prisma.teacher.create({
     data: {
       id: 't2', name: 'João Santos', email: 'joao.santos@escola.edu.br',
-      login: 'joao.santos', password: '123456', status: 'active',
+      login: 'joao.santos', password: seedPasswordHash, status: 'active',
       subject: 'Pedagogia', role: 'teacher',
     },
   });
   await prisma.teacher.create({
     data: {
       id: 't3', name: 'Ana Lima', email: 'ana.lima@escola.edu.br',
-      login: 'ana.lima', password: '123456', status: 'inactive',
+      login: 'ana.lima', password: seedPasswordHash, status: 'inactive',
       subject: 'Psicopedagogia', role: 'teacher',
     },
   });
@@ -248,6 +281,8 @@ async function main() {
   console.log('🏆 Registros de desempenho criados.');
 
   console.log('✅ Seed concluído com sucesso!');
+  console.log('🔑 Contas de exemplo: admin (master), maria.silva e joao.santos (professores).');
+  console.log(`   Senha de todas: ${seedPassword}${process.env.SEED_PASSWORD ? ' (definida em SEED_PASSWORD)' : ' (gerada agora; não fica salva em lugar nenhum)'}`);
 }
 
 main()

@@ -84,6 +84,7 @@ model Activity {
   adaptedFor      String[] @default([])
   studentId       String?
   teacherId       String?
+  materialType    String   @default("none") // "none" | "worksheet" | "sequence_cards" | "memory_game"
   createdAt       DateTime @default(now())
 
   teacher            Teacher?            @relation(fields: [teacherId], references: [id])
@@ -92,8 +93,24 @@ model Activity {
   routines           RoutineItem[]
   observations       LessonObservation[]
   performanceRecords PerformanceRecord[]
+  material           ActivityMaterial?
 
   @@map("activities")
+}
+
+// Material pronto gerado pela IA a partir da atividade salva (um por atividade).
+// `content` muda de formato conforme `type`; ver src/aiMaterial.ts.
+model ActivityMaterial {
+  id         String   @id @default(uuid())
+  activityId String   @unique
+  type       String   // "worksheet" | "sequence_cards" | "memory_game"
+  content    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@map("activity_materials")
 }
 
 model ActivityStep {

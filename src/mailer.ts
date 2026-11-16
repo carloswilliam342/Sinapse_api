@@ -1,6 +1,27 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// O cliente só é criado quando há e-mail para enviar. O construtor do Resend
+// lança erro sem chave, e criado na carga do módulo ele derrubava o servidor
+// inteiro quando RESEND_API_KEY faltava.
+let resendClient: Resend | null = null;
+
+function getResend(): Resend {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY não configurada: o envio de e-mail está indisponível.');
+  }
+  if (!resendClient) resendClient = new Resend(apiKey);
+  return resendClient;
+}
+
+// Remetente de teste do Resend: só entrega para o e-mail do dono da conta.
+// Para enviar a qualquer professor é preciso verificar um domínio no Resend
+// e definir MAIL_FROM com um endereço desse domínio.
+export const DEFAULT_MAIL_FROM = 'Sinapse <onboarding@resend.dev>';
+
+export function getMailFrom(): string {
+  return process.env.MAIL_FROM || DEFAULT_MAIL_FROM;
+}
 
 export async function sendPasswordResetEmail(to: string, resetLink: string) {
   const html = `
@@ -34,8 +55,8 @@ export async function sendPasswordResetEmail(to: string, resetLink: string) {
     </div>
   `;
 
-  const { data, error } = await resend.emails.send({
-    from: 'Sinapse <onboarding@resend.dev>',
+  const { data, error } = await getResend().emails.send({
+    from: getMailFrom(),
     to: [to],
     subject: 'Redefinição de Senha — Sinapse',
     html: html,

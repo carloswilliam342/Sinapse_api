@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import prisma from '../prisma';
 import { sendPasswordResetEmail } from '../mailer';
+import { logAction } from '../auditLogger';
 
 const router = Router();
 const SALT_ROUNDS = 10;
@@ -12,13 +13,14 @@ router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
 
-    if (!email) {
+    // Só texto: um objeto no corpo seria lido pelo Prisma como filtro
+    if (typeof email !== 'string' || !email.trim()) {
       return res.status(400).json({ error: 'E-mail é obrigatório' });
     }
 
     // Sempre retorna sucesso para não revelar se o e-mail existe
     const teacher = await prisma.teacher.findFirst({
-      where: { email, status: 'active' },
+      where: { email: { equals: email.trim(), mode: 'insensitive' }, status: 'active' },
     });
 
     if (teacher) {
@@ -48,7 +50,20 @@ router.post('/forgot-password', async (req, res) => {
         await sendPasswordResetEmail(teacher.email, resetLink);
       } catch (emailErr) {
         console.error('[PasswordReset] Falha ao enviar e-mail:', emailErr);
-        // Não retorna erro ao usuário para manter segurança
+        // Não retorna erro ao usuário para manter segurança (a resposta não pode
+        // revelar se o e-mail existe). Em troca, a falha fica na Auditoria, onde
+        // o master vê que o professor não recebeu o link e pode trocar a senha
+        // dele pela tela Professores.
+        const reason = emailErr instanceof Error ? emailErr.message : String(emailErr);
+        await logAction({
+          userId: teacher.id,
+          userName: teacher.name,
+          action: 'ERROR',
+          entity: 'email',
+          entityId: teacher.id,
+          details: `Falha ao enviar o e-mail de redefinição de senha para "${teacher.name}". O link não chegou. Motivo: ${reason.slice(0, 200)}`,
+          ip: req.ip,
+        });
       }
     }
 
@@ -66,7 +81,7 @@ router.post('/reset-password', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
 
-    if (!token || !newPassword) {
+    if (typeof token !== 'string' || typeof newPassword !== 'string' || !token || !newPassword) {
       return res.status(400).json({ error: 'Token e nova senha são obrigatórios' });
     }
 

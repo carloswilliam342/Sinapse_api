@@ -2,25 +2,31 @@ import { Router } from 'express';
 import { z } from 'zod';
 import prisma from '../prisma';
 import type { AuthRequest } from '../middleware/auth';
+import { isAdmin, canUseActivity } from '../access';
 
 const router = Router();
 
-const observationSchema = z.object({
+// Campos sem .default(): no Zod 4, .partial() aplica o valor padrão a campos
+// ausentes, e uma edição parcial apagaria dados já gravados.
+const observationFields = {
   studentId: z.string().uuid('ID do aluno inválido'),
   classId: z.string().uuid('ID da turma inválido'),
   date: z.string().min(1, 'Data é obrigatória'),
   behavior: z.enum(['excellent', 'good', 'regular', 'difficult']),
   participation: z.enum(['high', 'medium', 'low']),
   completion: z.enum(['completed', 'completed_with_help', 'not_completed']),
-  notes: z.string().default(''),
+  notes: z.string(),
   activityId: z.string().uuid().nullable().optional().or(z.literal('').transform(() => null)),
+};
+
+const observationSchema = z.object({
+  ...observationFields,
+  notes: observationFields.notes.default(''),
 });
 
-const updateObservationSchema = observationSchema.partial();
+const updateObservationSchema = z.object(observationFields).partial();
 
-function isAdmin(req: AuthRequest) {
-  return req.user?.role === 'master' || req.user?.role === 'admin';
-}
+const ACTIVITY_DENIED = 'Acesso negado: atividade inexistente ou de outro professor';
 
 // Listar observações (com filtros opcionais)
 router.get('/', async (req: AuthRequest, res) => {
@@ -61,6 +67,9 @@ router.post('/', async (req: AuthRequest, res) => {
     if (!isAdmin(req) && student.class.teacherId !== req.user?.id) {
       return res.status(403).json({ error: 'Acesso negado: a turma não pertence a você' });
     }
+    if (data.activityId && !(await canUseActivity(req, data.activityId))) {
+      return res.status(403).json({ error: ACTIVITY_DENIED });
+    }
 
     const observation = await prisma.lessonObservation.create({
       data,
@@ -89,6 +98,28 @@ router.put('/:id', async (req: AuthRequest, res) => {
     }
 
     const data = updateObservationSchema.parse(req.body);
+
+    // A checagem acima olhou a turma atual da observação. Se a edição troca o
+    // aluno ou a turma, o destino passa pelas mesmas regras da criação.
+    const studentId = data.studentId ?? existing.studentId;
+    const classId = data.classId ?? existing.classId;
+    if (studentId !== existing.studentId || classId !== existing.classId) {
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: { class: true },
+      });
+      if (!student || student.classId !== classId) {
+        return res.status(400).json({ error: 'O aluno não pertence à turma informada' });
+      }
+      if (!isAdmin(req) && student.class.teacherId !== req.user?.id) {
+        return res.status(403).json({ error: 'Acesso negado: a turma não pertence a você' });
+      }
+    }
+    if (data.activityId && data.activityId !== existing.activityId &&
+        !(await canUseActivity(req, data.activityId))) {
+      return res.status(403).json({ error: ACTIVITY_DENIED });
+    }
+
     const observation = await prisma.lessonObservation.update({
       where: { id: req.params.id as string },
       data,
