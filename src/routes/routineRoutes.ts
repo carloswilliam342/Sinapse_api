@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../prisma';
 import type { AuthRequest } from '../middleware/auth';
 import { canUseActivity, canUseClass } from '../access';
+import { optionalRecordId, recordId } from '../ids';
 import { addDays, mondayOf, todayInAppTz, utcMidnight } from '../dates';
 
 const router = Router();
@@ -10,11 +11,11 @@ const router = Router();
 // Campos sem .default(): no Zod 4, .partial() aplica o valor padrão a campos
 // ausentes, e uma edição parcial apagaria dados já gravados.
 const routineFields = {
-  classId: z.string().uuid('ID da turma inválido'),
+  classId: recordId('ID da turma inválido'),
   dayOfWeek: z.number().int().min(0).max(6),
   time: z.string().min(1, 'Horário é obrigatório'),
   title: z.string().min(1, 'Título é obrigatório'),
-  activityId: z.string().uuid().nullable().optional().or(z.literal('').transform(() => null)),
+  activityId: optionalRecordId(),
   reminder: z.boolean(),
   reminderText: z.string().nullable().optional(),
   color: z.string().min(1, 'Cor é obrigatória'),

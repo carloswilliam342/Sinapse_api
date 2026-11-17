@@ -3,14 +3,15 @@ import { z } from 'zod';
 import prisma from '../prisma';
 import type { AuthRequest } from '../middleware/auth';
 import { isAdmin, canUseActivity, canUseStudent } from '../access';
+import { recordId } from '../ids';
 
 const router = Router();
 
 // Campos sem .default(): no Zod 4, .partial() aplica o valor padrão a campos
 // ausentes, e uma edição parcial apagaria dados já gravados.
 const performanceFields = {
-  studentId: z.string().uuid('ID do aluno inválido'),
-  activityId: z.string().uuid('ID da atividade inválido'),
+  studentId: recordId('ID do aluno inválido'),
+  activityId: recordId('ID da atividade inválido'),
   activityTitle: z.string().min(1, 'Título da atividade é obrigatório'),
   date: z.string().min(1, 'Data é obrigatória'),
   status: z.enum(['completed', 'completed_with_help', 'not_completed']),

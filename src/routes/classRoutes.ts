@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../prisma';
 import { logAction } from '../auditLogger';
 import type { AuthRequest } from '../middleware/auth';
+import { recordId } from '../ids';
 
 const router = Router();
 
@@ -10,7 +11,7 @@ const classSchema = z.object({
   name: z.string().min(1, 'Nome da turma é obrigatório'),
   year: z.string().min(1, 'Ano é obrigatório'),
   shift: z.enum(['morning', 'afternoon', 'evening']),
-  teacherId: z.string().uuid('ID do professor inválido'),
+  teacherId: recordId('ID do professor inválido'),
 });
 
 const updateClassSchema = classSchema.partial();

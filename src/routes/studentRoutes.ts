@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../prisma';
 import { logAction } from '../auditLogger';
 import type { AuthRequest } from '../middleware/auth';
+import { recordId } from '../ids';
 
 const router = Router();
 
@@ -10,7 +11,7 @@ const router = Router();
 // ausentes, e editar só o nome marcaria o aluno como sem TEA/TDAH.
 const studentFields = {
   name: z.string().min(1, 'Nome do aluno é obrigatório'),
-  classId: z.string().uuid('ID da turma inválido'),
+  classId: recordId('ID da turma inválido'),
   registrationNumber: z.string().min(1, 'Matrícula é obrigatória'),
   birthDate: z.string().min(1, 'Data de nascimento é obrigatória'),
   needsTea: z.boolean(),

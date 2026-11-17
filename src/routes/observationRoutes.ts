@@ -3,20 +3,21 @@ import { z } from 'zod';
 import prisma from '../prisma';
 import type { AuthRequest } from '../middleware/auth';
 import { isAdmin, canUseActivity } from '../access';
+import { optionalRecordId, recordId } from '../ids';
 
 const router = Router();
 
 // Campos sem .default(): no Zod 4, .partial() aplica o valor padrão a campos
 // ausentes, e uma edição parcial apagaria dados já gravados.
 const observationFields = {
-  studentId: z.string().uuid('ID do aluno inválido'),
-  classId: z.string().uuid('ID da turma inválido'),
+  studentId: recordId('ID do aluno inválido'),
+  classId: recordId('ID da turma inválido'),
   date: z.string().min(1, 'Data é obrigatória'),
   behavior: z.enum(['excellent', 'good', 'regular', 'difficult']),
   participation: z.enum(['high', 'medium', 'low']),
   completion: z.enum(['completed', 'completed_with_help', 'not_completed']),
   notes: z.string(),
-  activityId: z.string().uuid().nullable().optional().or(z.literal('').transform(() => null)),
+  activityId: optionalRecordId(),
 };
 
 const observationSchema = z.object({
