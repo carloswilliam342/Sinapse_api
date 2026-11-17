@@ -59,7 +59,7 @@ async function main() {
   }
   if (!dbReady) throw new Error('Banco de demonstração não ficou pronto.');
   require('dotenv').config({ path: path.join(root, '.env') });
-  const env = { ...process.env, DATABASE_URL: databaseUrl, NODE_ENV: 'development', GEMINI_ALLOW_STUDENT_DATA: 'false',
+  const env = { ...process.env, DATABASE_URL: databaseUrl, NODE_ENV: 'development', GEMINI_ALLOW_STUDENT_DATA: 'true',
     GEMINI_MODEL: 'gemini-3.5-flash-lite', GEMINI_MODEL_MATERIAL: 'gemini-3.8-flash', RESEND_API_KEY: '', TRUST_PROXY_HOPS: '0' };
   run(['node_modules/prisma/build/index.js', 'migrate', 'deploy'], env);
   // Compilar antes de subir a API evita DLL do Prisma bloqueada no Windows.
